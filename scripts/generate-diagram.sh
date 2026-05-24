@@ -16,6 +16,22 @@ WIDTH="1920"
 OUTPUT_DIR="."
 VALIDATE=true
 
+find_rsvg_convert() {
+    if command -v rsvg-convert &> /dev/null; then
+        command -v rsvg-convert
+        return 0
+    fi
+
+    for candidate in /opt/homebrew/bin/rsvg-convert /usr/local/bin/rsvg-convert; do
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 # Valid diagram types
 VALID_TYPES="architecture|data-flow|flowchart|sequence|comparison|timeline|mind-map|agent|memory|use-case|class|state-machine|er-diagram|network-topology"
 
@@ -168,10 +184,21 @@ PY
 )
 
     PNG_OK=false
+    RSVG_CONVERT="$(find_rsvg_convert || true)"
 
-    # Method 1 (preferred): cairosvg — best CSS support, good fidelity
-    if python3 -c "import cairosvg" 2>/dev/null; then
-        echo -e "${BLUE}Using cairosvg (recommended)...${NC}"
+    # Method 1 (preferred): rsvg-convert — stable system binary, no Python runtime coupling
+    if [ -n "$RSVG_CONVERT" ]; then
+        echo -e "${BLUE}Using rsvg-convert (recommended default): ${RSVG_CONVERT}${NC}"
+        if "$RSVG_CONVERT" -w "$WIDTH" "$SVG_FILE" -o "$PNG_FILE" 2>/dev/null; then
+            PNG_OK=true
+        else
+            echo -e "${YELLOW}rsvg-convert failed, trying cairosvg fallback...${NC}"
+        fi
+    fi
+
+    # Method 2 (fallback): cairosvg — better CSS support on some diagrams, but depends on cairo runtime
+    if [ "$PNG_OK" = false ] && python3 -c "import cairosvg" 2>/dev/null; then
+        echo -e "${BLUE}Using cairosvg (fallback)...${NC}"
         if python3 - "$SVG_FILE" "$PNG_FILE" "$SCALE" <<'PY' >/dev/null 2>&1
 import sys
 import cairosvg
@@ -180,18 +207,6 @@ svg_file, png_file, scale = sys.argv[1], sys.argv[2], float(sys.argv[3])
 cairosvg.svg2png(url=svg_file, write_to=png_file, scale=scale)
 PY
         then
-            PNG_OK=true
-        else
-            echo -e "${YELLOW}cairosvg failed, falling back...${NC}"
-        fi
-    fi
-
-    # Method 2 (fallback): rsvg-convert — may drop CSS / foreignObject
-    if [ "$PNG_OK" = false ] && command -v rsvg-convert &> /dev/null; then
-        echo -e "${BLUE}Using rsvg-convert (fallback)...${NC}"
-        echo -e "${YELLOW}Warning: rsvg-convert may drop CSS styles or <foreignObject> — install cairosvg for better fidelity${NC}"
-        echo -e "${YELLOW}  pip install cairosvg${NC}"
-        if rsvg-convert -w "$WIDTH" "$SVG_FILE" -o "$PNG_FILE" 2>/dev/null; then
             PNG_OK=true
         fi
     fi
@@ -202,8 +217,10 @@ PY
     else
         echo -e "${RED}PNG export failed${NC}"
         echo -e "${YELLOW}Install one of:${NC}"
-        echo -e "  ${YELLOW}pip install cairosvg${NC}        (recommended)"
-        echo -e "  ${YELLOW}brew install librsvg${NC}        (macOS)  /  apt install librsvg2-bin (Debian)"
+        echo -e "  ${YELLOW}brew install librsvg${NC}        (recommended on macOS)"
+        echo -e "  ${YELLOW}/opt/homebrew/bin/rsvg-convert --version${NC}  (verify Apple Silicon Homebrew path)"
+        echo -e "  ${YELLOW}apt install librsvg2-bin${NC}     (recommended on Debian/Ubuntu)"
+        echo -e "  ${YELLOW}pip install cairosvg${NC}        (fallback; requires cairo runtime)"
         echo -e "  ${YELLOW}npm install puppeteer${NC}       (highest fidelity)"
         exit 1
     fi

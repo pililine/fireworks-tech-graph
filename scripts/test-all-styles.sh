@@ -11,6 +11,22 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+find_rsvg_convert() {
+    if command -v rsvg-convert &> /dev/null; then
+        command -v rsvg-convert
+        return 0
+    fi
+
+    for candidate in /opt/homebrew/bin/rsvg-convert /usr/local/bin/rsvg-convert; do
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="${SKILL_DIR}/test-output"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -36,23 +52,28 @@ WARNINGS=0
 FIXTURES_DIR="${SKILL_DIR}/fixtures"
 REQUIRE_PNG="${REQUIRE_PNG:-1}"
 RENDERER=""
+RSVG_CONVERT="$(find_rsvg_convert || true)"
 
 if [ "$REQUIRE_PNG" != "0" ] && [ "$REQUIRE_PNG" != "1" ]; then
     echo -e "${RED}Error: REQUIRE_PNG must be 0 or 1 (got: ${REQUIRE_PNG})${NC}"
     exit 1
 fi
 
-if python3 -c "import cairosvg" 2>/dev/null; then
-    RENDERER="cairosvg"
-elif command -v rsvg-convert &> /dev/null; then
+if [ -n "$RSVG_CONVERT" ]; then
     RENDERER="rsvg-convert"
+elif python3 -c "import cairosvg" 2>/dev/null; then
+    RENDERER="cairosvg"
 fi
 
 if [ -n "$RENDERER" ]; then
-    echo -e "${GREEN}PNG renderer: ${RENDERER}${NC}"
+    if [ "$RENDERER" = "rsvg-convert" ]; then
+        echo -e "${GREEN}PNG renderer: ${RENDERER} (${RSVG_CONVERT})${NC}"
+    else
+        echo -e "${GREEN}PNG renderer: ${RENDERER}${NC}"
+    fi
 else
     WARNINGS=$((WARNINGS + 1))
-    echo -e "${YELLOW}⚠ No PNG renderer detected (cairosvg / rsvg-convert)${NC}"
+    echo -e "${YELLOW}⚠ No PNG renderer detected (rsvg-convert / cairosvg)${NC}"
     if [ "$REQUIRE_PNG" = "1" ]; then
         echo -e "${YELLOW}⚠ PNG-required mode is enabled; tests without PNG output will fail${NC}"
     else
@@ -138,7 +159,7 @@ PY
                     then
                         PNG_OK=true
                     fi
-                elif [ "$RENDERER" = "rsvg-convert" ] && rsvg-convert -w 1920 "$SVG_FILE" -o "$PNG_FILE" 2>/dev/null; then
+                elif [ "$RENDERER" = "rsvg-convert" ] && "$RSVG_CONVERT" -w 1920 "$SVG_FILE" -o "$PNG_FILE" 2>/dev/null; then
                     PNG_OK=true
                 fi
             fi
@@ -150,7 +171,9 @@ PY
             elif [ "$REQUIRE_PNG" = "1" ]; then
                 if [ -z "$RENDERER" ]; then
                     echo -e "${RED}✗ Fail${NC} (PNG renderer missing)"
-                    echo -e "    ${YELLOW}⚠ Install cairosvg: pip install cairosvg${NC}"
+                    echo -e "    ${YELLOW}⚠ Install rsvg-convert first: brew install librsvg${NC}"
+                    echo -e "    ${YELLOW}⚠ If installed via Apple Silicon Homebrew, verify /opt/homebrew/bin/rsvg-convert${NC}"
+                    echo -e "    ${YELLOW}⚠ Or fallback to cairosvg: pip install cairosvg${NC}"
                 else
                     echo -e "${RED}✗ Fail${NC} (PNG export failed via ${RENDERER})"
                 fi

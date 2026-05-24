@@ -19,7 +19,7 @@ SVG 验证脚本，检查 SVG 语法并报告详细错误。
 - 特殊字符转义
 - Marker 引用完整性
 - 闭合标签 `</svg>`
-- 渲染验证（cairosvg 优先，rsvg-convert 兜底）
+- 渲染验证（若可用则先 cairosvg，否则 rsvg-convert）
 
 **示例：**
 ```bash
@@ -125,25 +125,50 @@ python3 ./generate-from-template.py memory ./output/mem0.svg '{
 
 ## 依赖
 
-所有脚本需要至少一个 PNG 渲染器（推荐 cairosvg）：
+所有脚本需要至少一个 PNG 渲染器。推荐优先级：
 
-- **cairosvg**（推荐）- SVG 转 PNG，CSS 支持最好
-  ```bash
-  pip install cairosvg
-  ```
-
-- **rsvg-convert**（备选）- 系统包；复杂 SVG 可能丢失 CSS / `<foreignObject>`
+- **rsvg-convert（默认首选）** - 独立二进制，稳定，不依赖 Python 运行时
   ```bash
   brew install librsvg                # macOS
   sudo apt install librsvg2-bin       # Ubuntu/Debian
   ```
 
-- **puppeteer**（最高保真）- 真实 Chromium 渲染
+- **cairosvg（备选）** - CSS 支持好，但依赖系统 cairo 运行时 + Python 环境
+  ```bash
+  brew install cairo pango gdk-pixbuf libffi   # macOS
+  python -m pip install cairosvg
+  ```
+
+- **puppeteer（最高保真）** - 真实 Chromium 渲染，适合复杂 SVG
   ```bash
   npm install puppeteer
   ```
 
-`generate-diagram.sh` 会优先调用 cairosvg，缺失时自动回退到 rsvg-convert。完整对比与 puppeteer 脚本见 [SKILL.md → SVG → PNG Conversion](../SKILL.md)。
+`generate-diagram.sh` 与 `test-all-styles.sh` 已统一为：`rsvg-convert` 优先，`cairosvg` 备选，`puppeteer` 作为更重 fallback。完整对比见 [SKILL.md → SVG → PNG Conversion](../SKILL.md)。
+
+## PNG 导出与渲染器优先级（通用规则）
+
+1. **首选 `rsvg-convert`**
+   - 安装：`brew install librsvg`
+   - 命令：`rsvg-convert -w 2400 -o output.png input.svg`
+   - 适用：本地与 CI 的默认稳定路径
+2. **备选 `cairosvg`**
+   - 安装：`brew install cairo pango gdk-pixbuf libffi && python -m pip install cairosvg`
+   - 命令：`cairosvg input.svg -o output.png --output-width 2400`
+   - 说明：仅 `pip install cairosvg` 可能不够，仍需系统 cairo 库
+3. **高保真 fallback：`puppeteer` / Chrome**
+   - 适合复杂 SVG、中文字体、浏览器一致性要求高的场景
+   - 依赖更重，优先用于兜底路径
+4. **临时 fallback：`sips` / `qlmanage`**
+   - 仅临时使用，不建议作为 CI 或正式导出主路径
+   - 可能出现比例、画布、字体或渲染差异
+
+### macOS 注意事项
+
+- Apple Silicon 建议使用 Homebrew 路径（`/opt/homebrew`）。
+- 避免混用系统 Python、CommandLineTools Python、项目 `.venv`、用户 site-packages。
+- 若 cairosvg 报 `libcairo` 缺失，优先补齐 brew 侧 cairo/librsvg。
+- 若系统 Python 仍无法解析 cairo 依赖，不建议全局改 `DYLD_*`；优先改用 `rsvg-convert` 或 Homebrew Python 独立 venv。
 
 - **grep, sed, awk** - 文本处理（macOS 自带）
 
@@ -208,22 +233,23 @@ ls -lh ../test-output/
 
 ### 问题：找不到 PNG 渲染器
 
-**解决方案（任选其一，推荐 cairosvg）：**
+**解决方案（按优先级）：**
 ```bash
-pip install cairosvg                   # 推荐
-brew install librsvg                   # macOS 系统包
+brew install librsvg                   # 推荐首选（macOS）
 sudo apt install librsvg2-bin          # Ubuntu/Debian
+brew install cairo pango gdk-pixbuf libffi && python -m pip install cairosvg  # 备选
 ```
 
 ### 问题：rsvg-convert 渲染缺框/缺文字
 
 **原因：** rsvg-convert 对 `<foreignObject>`、CSS `filter`、复杂 `<style>` 块支持有限。
 
-**解决方案：** 切换到 cairosvg：
+**解决方案：** 切换到 cairosvg 或 puppeteer：
 ```bash
-pip install cairosvg
+brew install cairo pango gdk-pixbuf libffi
+python -m pip install cairosvg
 ```
-脚本会自动优先使用 cairosvg。如果仍需要像素级还原（例如浏览器生成的 SVG），改用 puppeteer（见 SKILL.md）。
+脚本默认优先用 rsvg-convert；遇到复杂 SVG 可改用 cairosvg。若仍需要像素级还原（例如浏览器生成 SVG），改用 puppeteer（见 SKILL.md）。
 
 ### 问题：权限被拒绝
 

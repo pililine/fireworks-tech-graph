@@ -14,7 +14,7 @@
 
 ## Overview
 
-`fireworks-tech-graph` turns natural language descriptions into polished SVG diagrams, then exports them as high-resolution PNG via `cairosvg` (recommended), with `rsvg-convert` and `puppeteer` available as alternatives. It ships with **7 visual styles** and deep knowledge of AI/Agent domain patterns (RAG, Agentic Search, Mem0, Multi-Agent, Tool Call flows), plus full support for all 14 UML diagram types.
+`fireworks-tech-graph` turns natural language descriptions into polished SVG diagrams, then exports them as high-resolution PNG via `rsvg-convert` (recommended default), with `cairosvg` and `puppeteer` available as alternatives. It ships with **7 visual styles** and deep knowledge of AI/Agent domain patterns (RAG, Agentic Search, Mem0, Multi-Agent, Tool Call flows), plus full support for all 14 UML diagram types.
 
 ```
 User: "Generate a Mem0 memory architecture diagram, dark style"
@@ -179,29 +179,56 @@ git clone https://github.com/yizhiyanhua-ai/fireworks-tech-graph.git ~/.claude/s
 
 ## Requirements
 
-Pick **one** PNG renderer (cairosvg recommended):
+Pick **one** PNG renderer (`rsvg-convert` recommended default):
 
 ```bash
-# Recommended: cairosvg (best CSS support)
-pip install cairosvg
-
-# Fallback: rsvg-convert (system package; may drop CSS / <foreignObject>)
+# Recommended default: rsvg-convert (stable binary, no Python coupling)
 brew install librsvg                   # macOS
 sudo apt install librsvg2-bin          # Ubuntu/Debian
 
-# Highest fidelity: puppeteer (real Chromium; heavy)
-npm install puppeteer
+# Fallback: cairosvg (requires system cairo runtime + Python package)
+brew install cairo pango gdk-pixbuf libffi   # macOS
+python -m pip install cairosvg
 
 # Verify (any one is enough)
-python3 -c "import cairosvg; print(cairosvg.__version__)"
 rsvg-convert --version
+python3 -c "import cairosvg; print(cairosvg.__version__)"
+
+# Highest fidelity fallback: puppeteer (real Chromium; heavy)
+npm install puppeteer
 ```
 
 | Renderer | Quality | Install Cost | Use When |
 |----------|---------|--------------|----------|
-| **cairosvg** | ✅ Good | Single `pip install` | Default — best balance |
-| rsvg-convert | ⚠️ Fair | System package | No Python available, simple flat diagrams |
+| **rsvg-convert** | ✅ Good | System package | Default — stable CLI path in local/CI workflows |
+| cairosvg | ✅ Good | System cairo + Python package | Fallback when you need specific CSS behavior and Python path is healthy |
 | puppeteer | ✅✅ Best | Node + ~150MB Chromium | Browser-generated SVG (D3, Mermaid) or pixel-perfect required |
+
+## PNG Export Renderer Priority
+
+Use this priority order for SVG -> PNG export in local and CI environments:
+
+1. **Primary: `rsvg-convert`**
+   - Install: `brew install librsvg`
+   - Command: `rsvg-convert -w 2400 -o output.png input.svg`
+   - Why: standalone binary, stable in mixed Python environments
+2. **Secondary: `cairosvg`**
+   - Install: `brew install cairo pango gdk-pixbuf libffi && python -m pip install cairosvg`
+   - Command: `cairosvg input.svg -o output.png --output-width 2400`
+   - Note: `pip install cairosvg` alone may be insufficient without system cairo libraries
+3. **High-fidelity fallback: `puppeteer` / headless Chrome**
+   - Best for complex CSS/filter/foreignObject behavior and strict browser parity
+   - Heavier dependency footprint
+4. **Temporary fallback only: `sips` / `qlmanage`**
+   - Useful for quick local recovery, but not recommended for CI or release exports
+   - May introduce scale/canvas/font/rendering inconsistencies
+
+### macOS Notes (Apple Silicon Included)
+
+- Prefer Homebrew toolchains under `/opt/homebrew` for renderers and dependencies.
+- Avoid mixing multiple Python runtimes (system Python, CommandLineTools Python, project venv, user site-packages) for export commands.
+- If `cairosvg` reports missing `libcairo`, install renderer dependencies via Homebrew first (`cairo`, `librsvg`, related libs).
+- If system Python still cannot resolve cairo-linked libs, do not force global `DYLD_*` hacks; prefer `rsvg-convert` or use a Homebrew Python virtual environment.
 
 ---
 
@@ -541,8 +568,8 @@ fireworks-tech-graph/
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | PNG is blank or all-black | `@import url()` in SVG — neither cairosvg nor rsvg-convert can fetch external fonts | Remove `@import`, use system font stack |
-| PNG not generated | No renderer installed | `pip install cairosvg` (recommended), or `brew install librsvg` / `apt install librsvg2-bin` |
-| Borders or text missing in PNG | Using `rsvg-convert` on SVG with CSS / `<foreignObject>` | Switch to `cairosvg` (`pip install cairosvg`) — much better CSS support |
+| PNG not generated | No renderer installed | Install `rsvg-convert` first (`brew install librsvg` or `apt install librsvg2-bin`), then fallback to `cairosvg` if needed |
+| Borders or text missing in PNG | Renderer difference on complex CSS / `<foreignObject>` | Try `cairosvg` with system cairo libs, or use `puppeteer` for browser-level fidelity |
 | Diagram cut off at bottom | ViewBox height too short | Increase `height` in `viewBox="0 0 960 <height>"` |
 | Text overflowing boxes | Labels too long | Add `text-anchor="middle"` + `<clipPath>` or shorten label |
 | Icons not rendering | External CDN URL | Use inline SVG paths from `references/icons.md` |

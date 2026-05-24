@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 700">
   <style>
     text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .title { font-size: 24px; font-weifill: #1e293b; }
+    .title { font-size: 24px; font-weight: 700; fill: #1e293b; }
     .header { font-size: 14px; font-weight: 600; fill: #1e293b; }
     .row-label { font-size: 13px; font-weight: 500; fill: #475569; }
     .cell-text { font-size: 13px; font-weight: 400; fill: #1e293b; }

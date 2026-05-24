@@ -9,7 +9,7 @@
     .title { font-size: 24px; font-weight: 700; fill: #1e293b; }
     .state-name { font-size: 14px; font-weight: 600; fill: #1e293b; }
     .state-activity { font-size: 11px; font-weight: 400; fill: #64748b; }
-    . { font-size: 11px; font-weight: 400; fill: #475569; }
+    .transition-label { font-size: 11px; font-weight: 400; fill: #475569; }
   </style>
   <rect width="960" height="700" fill="#ffffff"/>
   <text x="480" y="60" text-anchor="middle" class="title">{{TITLE}}</text>

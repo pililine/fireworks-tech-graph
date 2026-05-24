@@ -38,7 +38,7 @@ SVG 图表生成脚本，提供自动验证和 PNG 导出。
 **选项：**
 - `-t, --type TYPE` - 图表类型（见脚本帮助）
 - `-s, --style STYLE` - 风格编号（1-7，默认：1）
-- `-o, --output PATH` - 输出路径（默认：当前目录）
+- `-o, --output PATH` - 输出目标（SVG 文件路径，或目录：已存在目录/以 `/` 结尾；默认：当前目录）
 - `-w, --width WIDTH` - PNG 宽度（像素，默认：1920）
 - `--no-validate` - 跳过验证
 - `-h, --help` - 显示帮助
@@ -47,6 +47,9 @@ SVG 图表生成脚本，提供自动验证和 PNG 导出。
 ```bash
 # 生成架构图（Style 1）
 ./generate-diagram.sh -t architecture -s 1 -o ./output/arch.svg
+
+# 输出到目录（自动命名为 architecture-style1.svg）
+./generate-diagram.sh -t architecture -s 1 -o ./output/
 
 # 生成流程图（Style 2，2400px 宽）
 ./generate-diagram.sh -t flowchart -s 2 -w 2400

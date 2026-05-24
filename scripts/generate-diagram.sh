@@ -26,13 +26,14 @@ Usage: $0 [OPTIONS]
 Options:
     -t, --type TYPE        Diagram type ($VALID_TYPES)
     -s, --style STYLE      Style number (1-7, default: 1)
-    -o, --output PATH      Output path (default: current directory)
+    -o, --output PATH      Output target: SVG file path, or directory (existing dir / trailing slash)
     -w, --width WIDTH      PNG width in pixels (default: 1920)
     --no-validate          Skip validation
     -h, --help             Show this help
 
 Examples:
     $0 -t architecture -s 1 -o ./output/arch.svg
+    $0 -t architecture -s 1 -o ./output/
     $0 -t class -s 2 -w 2400
     $0 -t sequence -s 6
 USAGE
@@ -93,14 +94,36 @@ if [ "$VALID_TYPE" = false ]; then
     exit 1
 fi
 
+if ! [[ "$WIDTH" =~ ^[0-9]+$ ]] || [ "$WIDTH" -le 0 ]; then
+    echo -e "${RED}Error: Invalid width '$WIDTH' (must be positive integer)${NC}"
+    exit 1
+fi
+
 # Determine output path
+BASENAME="${TYPE}-style${STYLE}"
 if [ -z "${OUTPUT_PATH:-}" ]; then
-    BASENAME="${TYPE}-style${STYLE}"
     SVG_FILE="${OUTPUT_DIR}/${BASENAME}.svg"
-    PNG_FILE="${OUTPUT_DIR}/${BASENAME}.png"
 else
-    SVG_FILE="$OUTPUT_PATH"
-    PNG_FILE="${OUTPUT_PATH%.svg}.png"
+    # Backward compatible behavior:
+    # - existing "*.svg" usage remains a file target
+    # - existing non-suffix paths remain file targets
+    # - directory paths are recognized when path exists as dir or ends with "/"
+    if [ -d "$OUTPUT_PATH" ] || [[ "$OUTPUT_PATH" == */ ]]; then
+        OUT_DIR="${OUTPUT_PATH%/}"
+        if [ -z "$OUT_DIR" ]; then
+            OUT_DIR="."
+        fi
+        mkdir -p "$OUT_DIR"
+        SVG_FILE="${OUT_DIR}/${BASENAME}.svg"
+    else
+        SVG_FILE="$OUTPUT_PATH"
+    fi
+fi
+mkdir -p "$(dirname "$SVG_FILE")"
+if [[ "$SVG_FILE" == *.svg ]]; then
+    PNG_FILE="${SVG_FILE%.svg}.png"
+else
+    PNG_FILE="${SVG_FILE}.png"
 fi
 
 echo -e "${BLUE}Generating ${TYPE} diagram (style ${STYLE})...${NC}"
@@ -138,14 +161,25 @@ if [ -f "$SVG_FILE" ]; then
     echo -e "\n${BLUE}Exporting PNG (width: ${WIDTH}px)...${NC}"
 
     # Compute scale for cairosvg (default scale=2 ≈ 1920px wide for 960 viewBox)
-    SCALE=$(python3 -c "print(round(${WIDTH}/960, 2))" 2>/dev/null || echo "2")
+    SCALE=$(python3 - "$WIDTH" <<'PY'
+import sys
+print(round(int(sys.argv[1]) / 960, 2))
+PY
+)
 
     PNG_OK=false
 
     # Method 1 (preferred): cairosvg — best CSS support, good fidelity
     if python3 -c "import cairosvg" 2>/dev/null; then
         echo -e "${BLUE}Using cairosvg (recommended)...${NC}"
-        if python3 -c "import cairosvg; cairosvg.svg2png(url='${SVG_FILE}', write_to='${PNG_FILE}', scale=${SCALE})" 2>/dev/null; then
+        if python3 - "$SVG_FILE" "$PNG_FILE" "$SCALE" <<'PY' >/dev/null 2>&1
+import sys
+import cairosvg
+
+svg_file, png_file, scale = sys.argv[1], sys.argv[2], float(sys.argv[3])
+cairosvg.svg2png(url=svg_file, write_to=png_file, scale=scale)
+PY
+        then
             PNG_OK=true
         else
             echo -e "${YELLOW}cairosvg failed, falling back...${NC}"

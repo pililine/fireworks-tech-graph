@@ -31,8 +31,34 @@ STYLE_NAMES=("Flat Icon" "Dark Terminal" "Blueprint" "Notion Clean" "Glassmorphi
 TOTAL=0
 PASSED=0
 FAILED=0
+WARNINGS=0
 
 FIXTURES_DIR="${SKILL_DIR}/fixtures"
+REQUIRE_PNG="${REQUIRE_PNG:-1}"
+RENDERER=""
+
+if [ "$REQUIRE_PNG" != "0" ] && [ "$REQUIRE_PNG" != "1" ]; then
+    echo -e "${RED}Error: REQUIRE_PNG must be 0 or 1 (got: ${REQUIRE_PNG})${NC}"
+    exit 1
+fi
+
+if python3 -c "import cairosvg" 2>/dev/null; then
+    RENDERER="cairosvg"
+elif command -v rsvg-convert &> /dev/null; then
+    RENDERER="rsvg-convert"
+fi
+
+if [ -n "$RENDERER" ]; then
+    echo -e "${GREEN}PNG renderer: ${RENDERER}${NC}"
+else
+    WARNINGS=$((WARNINGS + 1))
+    echo -e "${YELLOW}⚠ No PNG renderer detected (cairosvg / rsvg-convert)${NC}"
+    if [ "$REQUIRE_PNG" = "1" ]; then
+        echo -e "${YELLOW}⚠ PNG-required mode is enabled; tests without PNG output will fail${NC}"
+    else
+        echo -e "${YELLOW}⚠ SVG-only mode: set REQUIRE_PNG=1 to enforce PNG output${NC}"
+    fi
+fi
 
 echo -e "${BLUE}Testing all styles...${NC}"
 echo "----------------------------------------"
@@ -100,21 +126,40 @@ PY
         if python3 "${SKILL_DIR}/scripts/generate-from-template.py" "$TEMPLATE_TYPE" "$SVG_FILE" "$(cat "$FIXTURE")" > /dev/null 2>&1 \
             && "${SKILL_DIR}/scripts/validate-svg.sh" "$SVG_FILE" > /dev/null 2>&1; then
             PNG_OK=false
-            # Prefer cairosvg (best CSS support); fall back to rsvg-convert
-            if python3 -c "import cairosvg" 2>/dev/null \
-                && python3 -c "import cairosvg; cairosvg.svg2png(url='${SVG_FILE}', write_to='${PNG_FILE}', scale=2)" 2>/dev/null; then
-                PNG_OK=true
-            elif command -v rsvg-convert &> /dev/null \
-                && rsvg-convert -w 1920 "$SVG_FILE" -o "$PNG_FILE" 2>/dev/null; then
-                PNG_OK=true
+
+            if [ -n "$RENDERER" ]; then
+                if [ "$RENDERER" = "cairosvg" ]; then
+                    if python3 - "$SVG_FILE" "$PNG_FILE" <<'PY' >/dev/null 2>&1
+import sys
+import cairosvg
+
+cairosvg.svg2png(url=sys.argv[1], write_to=sys.argv[2], scale=2)
+PY
+                    then
+                        PNG_OK=true
+                    fi
+                elif [ "$RENDERER" = "rsvg-convert" ] && rsvg-convert -w 1920 "$SVG_FILE" -o "$PNG_FILE" 2>/dev/null; then
+                    PNG_OK=true
+                fi
             fi
-            if [ "$PNG_OK" = true ]; then
+
+            if [ "$PNG_OK" = true ] && [ -f "$PNG_FILE" ]; then
                 PNG_SIZE=$(du -h "$PNG_FILE" | cut -f1)
                 echo -e "${GREEN}✓ Pass${NC} (${PNG_SIZE})"
+                PASSED=$((PASSED + 1))
+            elif [ "$REQUIRE_PNG" = "1" ]; then
+                if [ -z "$RENDERER" ]; then
+                    echo -e "${RED}✗ Fail${NC} (PNG renderer missing)"
+                    echo -e "    ${YELLOW}⚠ Install cairosvg: pip install cairosvg${NC}"
+                else
+                    echo -e "${RED}✗ Fail${NC} (PNG export failed via ${RENDERER})"
+                fi
+                FAILED=$((FAILED + 1))
             else
-                echo -e "${GREEN}✓ Pass${NC}"
+                WARNINGS=$((WARNINGS + 1))
+                echo -e "${YELLOW}⚠ Pass (SVG only)${NC}"
+                PASSED=$((PASSED + 1))
             fi
-            PASSED=$((PASSED + 1))
         else
             echo -e "${RED}✗ Fail${NC}"
             FAILED=$((FAILED + 1))
@@ -133,6 +178,7 @@ echo "----------------------------------------"
 echo "Total tests: $TOTAL"
 echo -e "${GREEN}Passed: $PASSED${NC}"
 echo -e "${RED}Failed: $FAILED${NC}"
+echo -e "${YELLOW}Warnings: $WARNINGS${NC}"
 
 if [ "$FAILED" -eq 0 ]; then
     echo -e "\n${GREEN}✓ All tests passed!${NC}"

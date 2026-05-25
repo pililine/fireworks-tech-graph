@@ -266,20 +266,33 @@ else
     FAILURES=$((FAILURES + 1))
 fi
 
-# Check 7: render validation (cairosvg preferred, rsvg-convert fallback)
+# Check 7: render validation (rsvg-convert preferred, cairosvg fallback)
 echo -n "Running render validation... "
 RENDER_OK=false
 RENDER_TOOL=""
 RENDER_ERR=""
+RSVG_CONVERT=""
 
-if python3 -c "import cairosvg" 2>/dev/null; then
-    RENDER_TOOL="cairosvg"
-    if RENDER_ERR=$(python3 -c "import cairosvg; cairosvg.svg2png(url='${SVG_FILE}', write_to='/tmp/test-output.png')" 2>&1); then
+# Resolve rsvg-convert in PATH first, then common Homebrew locations.
+if command -v rsvg-convert &> /dev/null; then
+    RSVG_CONVERT="$(command -v rsvg-convert)"
+else
+    for candidate in /opt/homebrew/bin/rsvg-convert /usr/local/bin/rsvg-convert; do
+        if [ -x "$candidate" ]; then
+            RSVG_CONVERT="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -n "$RSVG_CONVERT" ]; then
+    RENDER_TOOL="rsvg-convert"
+    if RENDER_ERR=$("$RSVG_CONVERT" "$SVG_FILE" -o /tmp/test-output.png 2>&1); then
         RENDER_OK=true
     fi
-elif command -v rsvg-convert &> /dev/null; then
-    RENDER_TOOL="rsvg-convert"
-    if RENDER_ERR=$(rsvg-convert "$SVG_FILE" -o /tmp/test-output.png 2>&1); then
+elif python3 -c "import cairosvg" 2>/dev/null; then
+    RENDER_TOOL="cairosvg"
+    if RENDER_ERR=$(python3 -c "import cairosvg; cairosvg.svg2png(url='${SVG_FILE}', write_to='/tmp/test-output.png')" 2>&1); then
         RENDER_OK=true
     fi
 fi
@@ -293,7 +306,7 @@ elif [ -n "$RENDER_TOOL" ]; then
     echo "$RENDER_ERR"
     FAILURES=$((FAILURES + 1))
 else
-    echo -e "${YELLOW}⚠ Skipped${NC} (no renderer found — install cairosvg: pip install cairosvg)"
+    echo -e "${YELLOW}⚠ Skipped${NC} (no renderer found — install rsvg-convert: brew install librsvg)"
 fi
 
 echo "----------------------------------------"
